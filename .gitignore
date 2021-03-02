@@ -1,2 +1,6 @@
 *.csv
 .*
+*.json
+*.model
+*.npy
+checkpoints
