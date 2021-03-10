@@ -2,7 +2,10 @@ import logging
 import os
 
 import torch
+import numpy as np
 from sklearn_crfsuite.metrics import flat_classification_report
+from sklearn.metrics import classification_report, f1_score
+from matplotlib import pyplot as plt
 
 from src import tqdm
 from .data_with_vocab import LearnData as LearnDataWitVocab
@@ -49,6 +52,12 @@ def transformed_result(batch, y_preds, id2label):
         targets_cpu.append(y_true)
     return preds_cpu, targets_cpu
 
+def label2id(arr):
+    '''
+    transforms array of labels into array of ids and flatten it
+    '''
+    lbl_dict = {'B_ORG': 0, 'I_PER': 1, 'I_LOC': 2, 'I_ORG': 3, 'B_LOC': 4, 'B_PER': 5, 'O': 6, '<pad>': 6}
+    return [lbl_dict[item] for a in arr for item in a]
 
 def validate_step(dl, model, id2label):
     model.eval()
@@ -60,8 +69,9 @@ def validate_step(dl, model, id2label):
         preds_cpu_, targets_cpu_ = transformed_result(batch, preds, id2label)
         preds_cpu.extend(preds_cpu_)
         targets_cpu.extend(targets_cpu_)
+    f1_score_report = (f1_score(label2id(targets_cpu), label2id(preds_cpu), average='macro'), f1_score(label2id(targets_cpu), label2id(preds_cpu), average=None))
     clf_report = flat_classification_report(targets_cpu, preds_cpu, digits=3)
-    return clf_report
+    return clf_report, f1_score_report
 
 def predict(dl, model, id2label):
     model.eval()
@@ -151,6 +161,11 @@ class NerLearner(object):
         self.model = model
         self.validate_every = validate_every
         self.checkpoint_dir = checkpoint_dir
+        self.history = {}
+        
+        self.history['macro'] = []
+        for lbl in ['B_ORG', 'I_PER', 'I_LOC', 'I_ORG', 'B_LOC', 'B_PER', 'O']:
+            self.history[lbl] = []
 
     def fit(self, epochs=10):
         logging.info("Start training. Total epochs {}.".format(epochs))
@@ -160,7 +175,10 @@ class NerLearner(object):
     def fit_one_cycle(self, epoch):
         train_step(self.data.train_dl, self.model, self.optimizer, epoch)
         if epoch % self.validate_every == 0:
-            rep = validate_step(self.data.valid_dl, self.model, self.data.train_ds.idx2label)
+            rep, f1_score_report = validate_step(self.data.valid_dl, self.model, self.data.train_ds.idx2label)
+            self.history['macro'].append(f1_score_report[0])
+            for idx, lbl in enumerate(['B_ORG', 'I_PER', 'I_LOC', 'I_ORG', 'B_LOC', 'B_PER', 'O']):
+                self.history[lbl].append(f1_score_report[1][idx])
             print(rep)
         self.save_model(os.path.join(self.checkpoint_dir, f"{epoch}.cpt"))
 
@@ -169,3 +187,14 @@ class NerLearner(object):
 
     def load_model(self, path=None):
         self.model.load_state_dict(torch.load(path))
+    
+    def plot_learning_curve(self):
+        num_epochs = len(self.history['macro'])
+        plt.figure(figsize=(15, 8))
+        plt.plot(np.arange(1, num_epochs + 1), self.history['macro'], linewidth=7.0, label='macro')
+        for idx, lbl in enumerate(['B_ORG', 'I_PER', 'I_LOC', 'I_ORG', 'B_LOC', 'B_PER', 'O']):
+            plt.plot(np.arange(1, num_epochs + 1), self.history[lbl], label=lbl)
+        plt.xlabel('epoch', fontsize=16)
+        plt.ylabel('f1-score', fontsize=16)
+        plt.legend(loc='lower right')
+        plt.show()
