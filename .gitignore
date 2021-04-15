@@ -1,6 +1,7 @@
 *.csv
 .*
 *.json
+*.jsonl
 *.model
 *.npy
 bert.wv
