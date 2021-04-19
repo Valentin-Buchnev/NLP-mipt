@@ -1,9 +1,11 @@
 *.csv
 .*
+*.txt
 *.json
 *.jsonl
 *.model
 *.npy
 bert.wv
 rubert_cased_L-12_H-768_A-12_pt
+rubert-retrained
 checkpoints
